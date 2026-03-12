@@ -329,6 +329,11 @@ with right:
 
         # 類似事例
         with tabs[3]:
+            summary = safe_dict(result.get("similar_cases_summary"))
+
+            if summary.get("summary"):
+                st.write(summary.get("summary"))
+
             if summary.get("overview"):
                 st.markdown("### 概要")
                 st.write(summary.get("overview"))
