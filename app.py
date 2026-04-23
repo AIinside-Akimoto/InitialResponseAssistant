@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import io
 import json
 import mimetypes
 import os
@@ -182,7 +183,7 @@ def call_api(final_query: str, uploaded_file) -> Dict[str, Any]:
 # UI
 # =====================
 st.title("🧯 初動対応アシスタント")
-st.caption("現在の事象と関連ファイルを送信し、初動対応計画を表示します。")
+st.caption("現在の事象と関連ファイルまたはカメラ写真を送信し、初動対応計画を表示します。")
 
 if not API_BASE_URL or not API_KEY:
     st.error(
@@ -195,6 +196,12 @@ if not API_BASE_URL or not API_KEY:
 
 if "last_result" not in st.session_state:
     st.session_state["last_result"] = None
+if "camera_mode" not in st.session_state:
+    st.session_state["camera_mode"] = "idle"
+if "captured_photo" not in st.session_state:
+    st.session_state["captured_photo"] = None
+if "input_source" not in st.session_state:
+    st.session_state["input_source"] = None
 
 left, right = st.columns([1, 1], gap="large")
 
@@ -212,11 +219,65 @@ with left:
         placeholder="例：設備が停止し、エラーコードE102が表示されています。添付ログを確認してください。",
     )
 
-    uploaded_file = st.file_uploader(
-        "関連ファイル（必須）",
+    # --- ファイルアップロード ---
+    def _on_file_change():
+        if st.session_state.get("file_uploader") is not None:
+            st.session_state["input_source"] = "file"
+
+    file_from_uploader = st.file_uploader(
+        "関連ファイル",
         type=None,
-        help="ログ、スクリーンショット、設定ファイルなど。AIエージェントには関連ファイルが必須です。",
+        help="ログ、スクリーンショット、設定ファイルなど。",
+        key="file_uploader",
+        on_change=_on_file_change,
     )
+
+    # --- カメラ撮影 ---
+    if st.session_state["camera_mode"] == "idle":
+        if st.button("📷 写真を撮る", use_container_width=True):
+            st.session_state["camera_mode"] = "camera"
+            st.rerun()
+    elif st.session_state["camera_mode"] == "camera":
+        photo = st.camera_input(
+            "撮影ボタンを押してください",
+            help="カメラで現場の状況を撮影してください。",
+        )
+        if photo is not None:
+            st.session_state["captured_photo"] = photo.getvalue()
+            st.session_state["camera_mode"] = "preview"
+            st.session_state["input_source"] = "camera"
+            st.rerun()
+    elif st.session_state["camera_mode"] == "preview":
+        st.image(
+            st.session_state["captured_photo"],
+            use_container_width=True,
+        )
+        if st.button("📷 撮り直す", use_container_width=True):
+            st.session_state["camera_mode"] = "camera"
+            st.session_state["captured_photo"] = None
+            st.rerun()
+
+    # --- 後から操作した方を優先 ---
+    has_file = file_from_uploader is not None
+    has_photo = st.session_state["captured_photo"] is not None
+
+    if has_file and has_photo:
+        if st.session_state["input_source"] == "camera":
+            uploaded_file = io.BytesIO(st.session_state["captured_photo"])
+            uploaded_file.name = "camera_photo.jpg"
+            uploaded_file.type = "image/jpeg"
+            st.caption("→ カメラ写真が使用されます（後から操作）")
+        else:
+            uploaded_file = file_from_uploader
+            st.caption("→ アップロードファイルが使用されます（後から操作）")
+    elif has_photo:
+        uploaded_file = io.BytesIO(st.session_state["captured_photo"])
+        uploaded_file.name = "camera_photo.jpg"
+        uploaded_file.type = "image/jpeg"
+    elif has_file:
+        uploaded_file = file_from_uploader
+    else:
+        uploaded_file = None
 
     run = st.button("🚀 問い合わせ実行", type="primary", use_container_width=True)
 
@@ -228,7 +289,7 @@ with left:
         if not query_text.strip():
             errors.append("現在の事象が未入力です。")
         if uploaded_file is None:
-            errors.append("関連ファイルが未添付です（必須）。")
+            errors.append("関連ファイルまたは写真が必要です。ファイルをアップロードするか、写真を撮影してください。")
 
         if errors:
             for message in errors:
@@ -330,9 +391,6 @@ with right:
         # 類似事例
         with tabs[3]:
             summary = safe_dict(result.get("similar_cases_summary"))
-
-            if summary.get("summary"):
-                st.write(summary.get("summary"))
 
             if summary.get("overview"):
                 st.markdown("### 概要")
