@@ -69,6 +69,41 @@ if "warmed_up" not in st.session_state:
 # =====================
 # 選択肢（設備）
 # =====================
+
+# iPad等のモバイル端末で背面カメラ（environment）を優先使用するための
+# JavaScriptコード。getUserMedia の constraints を書き換えて
+# facingMode を 'environment' に設定する。
+_REAR_CAMERA_JS = """\
+<script>
+(function () {
+    try {
+        var target = window.parent.navigator.mediaDevices;
+        if (!target || !target.getUserMedia) return;
+        if (target._rearCameraPatched) return;
+        var orig = target.getUserMedia.bind(target);
+        target.getUserMedia = function (constraints) {
+            if (constraints && constraints.video) {
+                if (typeof constraints.video === "boolean") {
+                    constraints.video = {
+                        facingMode: { ideal: "environment" }
+                    };
+                } else if (
+                    typeof constraints.video === "object"
+                    && !constraints.video.facingMode
+                ) {
+                    constraints.video.facingMode = {
+                        ideal: "environment"
+                    };
+                }
+            }
+            return orig(constraints);
+        };
+        target._rearCameraPatched = true;
+    } catch (e) {}
+})();
+</script>
+"""
+
 EQUIPMENT_OPTIONS: List[str] = [
     "洗浄装置",
     "搬送コンベア",
@@ -234,10 +269,13 @@ with left:
 
     # --- カメラ撮影 ---
     if st.session_state["camera_mode"] == "idle":
-        if st.button("📷 写真を撮る", use_container_width=True):
+        if st.button("📷 写真を撮る", width="stretch"):
             st.session_state["camera_mode"] = "camera"
             st.rerun()
     elif st.session_state["camera_mode"] == "camera":
+        # 背面カメラ優先設定のJSを注入してからカメラを起動
+        st.html(_REAR_CAMERA_JS)
+
         photo = st.camera_input(
             "撮影ボタンを押してください",
             help="カメラで現場の状況を撮影してください。",
@@ -250,9 +288,9 @@ with left:
     elif st.session_state["camera_mode"] == "preview":
         st.image(
             st.session_state["captured_photo"],
-            use_container_width=True,
+            width="stretch",
         )
-        if st.button("📷 撮り直す", use_container_width=True):
+        if st.button("📷 撮り直す", width="stretch"):
             st.session_state["camera_mode"] = "camera"
             st.session_state["captured_photo"] = None
             st.rerun()
@@ -279,7 +317,7 @@ with left:
     else:
         uploaded_file = None
 
-    run = st.button("🚀 問い合わせ実行", type="primary", use_container_width=True)
+    run = st.button("🚀 問い合わせ実行", type="primary", width="stretch")
 
     if run:
         errors: List[str] = []
