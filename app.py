@@ -12,6 +12,7 @@ from typing import Any, Dict, List, Optional
 
 import requests
 import streamlit as st
+from streamlit_back_camera_input import back_camera_input
 
 
 # =====================
@@ -69,40 +70,6 @@ if "warmed_up" not in st.session_state:
 # =====================
 # 選択肢（設備）
 # =====================
-
-# iPad等のモバイル端末で背面カメラ（environment）を優先使用するための
-# JavaScriptコード。getUserMedia の constraints を書き換えて
-# facingMode を 'environment' に設定する。
-_REAR_CAMERA_JS = """\
-<script>
-(function () {
-    try {
-        var target = window.parent.navigator.mediaDevices;
-        if (!target || !target.getUserMedia) return;
-        if (target._rearCameraPatched) return;
-        var orig = target.getUserMedia.bind(target);
-        target.getUserMedia = function (constraints) {
-            if (constraints && constraints.video) {
-                if (typeof constraints.video === "boolean") {
-                    constraints.video = {
-                        facingMode: { ideal: "environment" }
-                    };
-                } else if (
-                    typeof constraints.video === "object"
-                    && !constraints.video.facingMode
-                ) {
-                    constraints.video.facingMode = {
-                        ideal: "environment"
-                    };
-                }
-            }
-            return orig(constraints);
-        };
-        target._rearCameraPatched = true;
-    } catch (e) {}
-})();
-</script>
-"""
 
 EQUIPMENT_OPTIONS: List[str] = [
     "洗浄装置",
@@ -273,13 +240,8 @@ with left:
             st.session_state["camera_mode"] = "camera"
             st.rerun()
     elif st.session_state["camera_mode"] == "camera":
-        # 背面カメラ優先設定のJSを注入してからカメラを起動
-        st.html(_REAR_CAMERA_JS)
-
-        photo = st.camera_input(
-            "撮影ボタンを押してください",
-            help="カメラで現場の状況を撮影してください。",
-        )
+        # 背面カメラをデフォルトで起動（streamlit-back-camera-input）
+        photo = back_camera_input(key="rear_cam")
         if photo is not None:
             st.session_state["captured_photo"] = photo.getvalue()
             st.session_state["camera_mode"] = "preview"
